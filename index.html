@@ -202,6 +202,14 @@ body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inse
 .weather-day-temp .max { color: var(--text); font-weight: 600; }
 .weather-day-temp .min { color: var(--text-faint); }
 .weather-loading { text-align: center; padding: 40px; color: var(--text-faint); font-family: var(--mono); font-size: 13px; }
+.cam-controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.cam-row { display: flex; gap: 8px; }
+.cam-row .setting-input { flex: 1; }
+.cam-auto-btn { background: var(--surface); border: 1px solid var(--border); color: var(--text-dim); font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: 1px; padding: 0 16px; border-radius: 6px; cursor: pointer; }
+.cam-auto-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.cam-slider { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
+.cam-slider-lbl { font-size: 10px; color: var(--text-faint); font-family: var(--mono); letter-spacing: 1px; width: 38px; }
+.cam-slider input[type=range] { flex: 1; accent-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -272,6 +280,22 @@ body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inse
       <p class="scan-hint" id="scan-hint">Priblíž sa k timecode, nech je dobre čitateľný</p>
     </div>
   </div>
+
+  <div class="cam-controls">
+    <div class="cam-row">
+      <select id="cam-select" class="setting-input" onchange="App.switchCamera()"></select>
+      <button class="cam-auto-btn" id="cam-auto-btn" onclick="App.toggleAutoScan()">AUTO</button>
+    </div>
+    <div class="cam-slider" id="cam-zoom-wrap" style="display:none;">
+      <span class="cam-slider-lbl">ZOOM</span>
+      <input type="range" id="cam-zoom" min="1" max="5" step="0.1" value="1" oninput="App.setZoom(this.value)">
+    </div>
+    <div class="cam-slider" id="cam-exp-wrap" style="display:none;">
+      <span class="cam-slider-lbl">EXP</span>
+      <input type="range" id="cam-exp" min="-3" max="3" step="0.3" value="0" oninput="App.setExposure(this.value)">
+    </div>
+  </div>
+
   <div class="ocr-status" id="ocr-status" style="display:none;">
     <div class="ocr-label" id="ocr-label">Detected</div>
     <div class="ocr-tc" id="ocr-tc">--:--:--:--</div>
@@ -533,6 +557,11 @@ const App = {
     project: 'My Project',
     camera: 'A',
     cameraStream: null,
+    videoTrack: null,
+    cameras: [],
+    currentDeviceId: null,
+    autoScan: false,
+    autoScanTimer: null,
     ocrWorker: null,
     ocrScanning: false,
     pendingTC: null,
@@ -666,19 +695,114 @@ const App = {
   // ============ SYNC / OCR ============
   async openSync() {
     this.showScreen('sync');
+    await this.startCamera();
+    await this.listCameras();
+  },
+
+  async startCamera(deviceId) {
+    // zastav predchádzajúci stream
+    if (this.state.cameraStream) this.state.cameraStream.getTracks().forEach(t => t.stop());
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false
-      });
+      const video = deviceId
+        ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+        : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } };
+      const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
       this.state.cameraStream = stream;
+      this.state.videoTrack = stream.getVideoTracks()[0];
+      this.state.currentDeviceId = this.state.videoTrack.getSettings().deviceId;
       document.getElementById('camera-video').srcObject = stream;
+      this.setupCameraControls();
     } catch (e) {
-      this.toast('Nemôžem spustiť kameru: ' + e.message, true);
+      this.toast('Kamera: ' + e.message, true);
     }
   },
 
+  async listCameras() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      this.state.cameras = devices.filter(d => d.kind === 'videoinput');
+      const sel = document.getElementById('cam-select');
+      sel.innerHTML = this.state.cameras.map((c, i) =>
+        `<option value="${c.deviceId}"${c.deviceId === this.state.currentDeviceId ? ' selected' : ''}>${c.label || ('Kamera ' + (i+1))}</option>`
+      ).join('');
+    } catch (e) {}
+  },
+
+  async switchCamera() {
+    const id = document.getElementById('cam-select').value;
+    await this.startCamera(id);
+  },
+
+  setupCameraControls() {
+    const track = this.state.videoTrack;
+    if (!track || !track.getCapabilities) return;
+    let caps = {};
+    try { caps = track.getCapabilities(); } catch (e) {}
+
+    // ZOOM
+    const zoomWrap = document.getElementById('cam-zoom-wrap');
+    if (caps.zoom) {
+      zoomWrap.style.display = 'flex';
+      const z = document.getElementById('cam-zoom');
+      z.min = caps.zoom.min; z.max = caps.zoom.max; z.step = caps.zoom.step || 0.1;
+      const cur = track.getSettings().zoom || caps.zoom.min;
+      z.value = cur;
+    } else {
+      zoomWrap.style.display = 'none';
+    }
+
+    // EXPOSURE (často nepodporované na iOS)
+    const expWrap = document.getElementById('cam-exp-wrap');
+    if (caps.exposureCompensation) {
+      expWrap.style.display = 'flex';
+      const e = document.getElementById('cam-exp');
+      e.min = caps.exposureCompensation.min; e.max = caps.exposureCompensation.max;
+      e.step = caps.exposureCompensation.step || 0.1;
+      e.value = track.getSettings().exposureCompensation || 0;
+    } else {
+      expWrap.style.display = 'none';
+    }
+  },
+
+  async setZoom(val) {
+    try { await this.state.videoTrack.applyConstraints({ advanced: [{ zoom: parseFloat(val) }] }); } catch (e) {}
+  },
+
+  async setExposure(val) {
+    try {
+      await this.state.videoTrack.applyConstraints({ advanced: [{ exposureMode: 'manual', exposureCompensation: parseFloat(val) }] });
+    } catch (e) {
+      try { await this.state.videoTrack.applyConstraints({ advanced: [{ exposureCompensation: parseFloat(val) }] }); } catch (e2) {}
+    }
+  },
+
+  toggleAutoScan() {
+    this.state.autoScan = !this.state.autoScan;
+    const btn = document.getElementById('cam-auto-btn');
+    btn.classList.toggle('active', this.state.autoScan);
+    if (this.state.autoScan) {
+      this.toast('Auto-scan zapnutý');
+      this.autoScanLoop();
+    } else if (this.state.autoScanTimer) {
+      clearTimeout(this.state.autoScanTimer);
+    }
+  },
+
+  async autoScanLoop() {
+    if (!this.state.autoScan) return;
+    if (!this.state.ocrScanning) {
+      await this.runOCR(true);
+      if (this.state.pendingTC && this.state.autoScan) {
+        // našli sme — vypni auto-scan, nech to neprepisuje
+        this.toggleAutoScan();
+        return;
+      }
+    }
+    this.state.autoScanTimer = setTimeout(() => this.autoScanLoop(), 1200);
+  },
+
   closeSync() {
+    if (this.state.autoScan) this.toggleAutoScan();
     if (this.state.cameraStream) {
       this.state.cameraStream.getTracks().forEach(t => t.stop());
       this.state.cameraStream = null;
@@ -686,7 +810,7 @@ const App = {
     this.goBack();
   },
 
-  async runOCR() {
+  async runOCR(silent) {
     if (this.state.ocrScanning) return;
     if (!this.state.cameraStream) {
       this.toast('Najprv spusti kameru', true);
@@ -694,8 +818,8 @@ const App = {
     }
 
     this.state.ocrScanning = true;
-    document.getElementById('scan-btn-text').textContent = 'Scanning...';
-    document.getElementById('scan-hint').textContent = 'Spracovávam...';
+    if (!silent) document.getElementById('scan-btn-text').textContent = 'Scanning...';
+    document.getElementById('scan-hint').textContent = silent ? 'Auto-scan…' : 'Spracovávam...';
 
     try {
       // Capture frame — zaznamenaj PRESNÝ moment zachytenia obrázka
@@ -1358,38 +1482,72 @@ const App = {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const heading = this.state.deviceHeading;
-    const az = this.state.sunAzimuth, el = this.state.sunElevation;
+    if (heading == null) {
+      document.getElementById('sun-ar-hint').textContent = 'Kalibruj kompas — zamávaj telefónom do ∞';
+      this.state.sunAnimFrame = requestAnimationFrame(() => this.drawSunAR());
+      return;
+    }
 
-    if (heading != null && az != null) {
-      // horizontálny rozdiel medzi smerom telefónu a slnkom
+    const fovH = 60, fovV = 75;
+    const lat = this.state.sunLat, lng = this.state.sunLng;
+    const project = (az, el) => {
       let diff = az - heading;
       while (diff > 180) diff -= 360;
       while (diff < -180) diff += 360;
-      const fovH = 60; // približný horizontálny FOV kamery
-      const fovV = 75;
-      const x = canvas.width/2 + (diff / (fovH/2)) * (canvas.width/2);
-      const y = canvas.height/2 - (el / (fovV/2)) * (canvas.height/2);
+      return {
+        x: canvas.width/2 + (diff / (fovH/2)) * (canvas.width/2),
+        y: canvas.height/2 - (el / (fovV/2)) * (canvas.height/2),
+        diff
+      };
+    };
 
-      const onScreen = Math.abs(diff) < fovH/2;
-      if (onScreen) {
-        // slnko
-        const grad = ctx.createRadialGradient(x, y, 5, x, y, 50);
-        grad.addColorStop(0, 'rgba(255,200,0,1)');
-        grad.addColorStop(1, 'rgba(255,150,0,0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath(); ctx.arc(x, y, 50, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#FFD700';
-        ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#FFF'; ctx.font = 'bold 13px -apple-system'; ctx.textAlign = 'center';
-        ctx.fillText((el >= 0 ? '☀️ '+Math.round(el)+'°' : 'pod obzorom'), x, y - 30);
-        document.getElementById('sun-ar-hint').textContent = el >= 0 ? '☀️ Slnko je tu' : '🌙 Slnko je pod obzorom (tu)';
-      } else {
-        // šípka kam otočiť
-        const dir = diff > 0 ? '→ otoč doprava' : '← otoč doľava';
-        document.getElementById('sun-ar-hint').textContent = dir + ' (' + Math.abs(Math.round(diff)) + '°)';
+    // DRÁHA SLNKA cez celý deň (každých 30 min) — krivka + hodinové značky
+    const base = new Date(); base.setHours(0,0,0,0);
+    const pathPts = [];
+    for (let min = 0; min <= 1440; min += 30) {
+      const t = new Date(base.getTime() + min*60000);
+      const p = this.sunPosition(t, lat, lng);
+      if (p.altitude > -6) pathPts.push({ t, ...p, proj: project(p.azimuth, p.altitude) });
+    }
+    // čiara dráhy
+    ctx.strokeStyle = 'rgba(255,180,60,0.5)'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    let started = false;
+    pathPts.forEach(pt => {
+      if (Math.abs(pt.proj.diff) < 90) {
+        if (!started) { ctx.moveTo(pt.proj.x, pt.proj.y); started = true; }
+        else ctx.lineTo(pt.proj.x, pt.proj.y);
+      } else { started = false; }
+    });
+    ctx.stroke();
+    // hodinové značky (celé hodiny)
+    ctx.textAlign = 'center';
+    pathPts.forEach(pt => {
+      if (pt.t.getMinutes() === 0 && pt.t.getHours() % 2 === 0 && Math.abs(pt.proj.diff) < fovH/2) {
+        ctx.fillStyle = 'rgba(255,180,60,0.9)';
+        ctx.beginPath(); ctx.arc(pt.proj.x, pt.proj.y, 3, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '10px -apple-system';
+        ctx.fillText(String(pt.t.getHours()).padStart(2,'0')+':00', pt.proj.x, pt.proj.y - 8);
       }
+    });
+
+    // AKTUÁLNE slnko
+    const az = this.state.sunAzimuth, el = this.state.sunElevation;
+    const cur = project(az, el);
+    if (Math.abs(cur.diff) < fovH/2) {
+      const grad = ctx.createRadialGradient(cur.x, cur.y, 4, cur.x, cur.y, 45);
+      grad.addColorStop(0, 'rgba(255,200,0,1)');
+      grad.addColorStop(1, 'rgba(255,150,0,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(cur.x, cur.y, 45, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = el >= 0 ? '#FFD700' : '#88AACC';
+      ctx.beginPath(); ctx.arc(cur.x, cur.y, 16, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#FFF'; ctx.font = 'bold 12px -apple-system';
+      ctx.fillText('teraz ' + Math.round(el) + '°', cur.x, cur.y - 26);
+      document.getElementById('sun-ar-hint').textContent = el >= 0 ? 'Slnko teraz tu • oblúk = dráha cez deň' : 'Slnko pod obzorom • oblúk = dráha cez deň';
     } else {
-      document.getElementById('sun-ar-hint').textContent = 'Kalibruj kompas — zamávaj telefónom do ∞';
+      const dir = cur.diff > 0 ? 'otoč doprava →' : '← otoč doľava';
+      document.getElementById('sun-ar-hint').textContent = dir + ' k slnku (' + Math.abs(Math.round(cur.diff)) + '°)';
     }
     this.state.sunAnimFrame = requestAnimationFrame(() => this.drawSunAR());
   },
