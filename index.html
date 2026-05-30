@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Marker">
+<meta name="theme-color" content="#0A0A0A">
+<title>Marker - Video Production Tool</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+input, textarea { -webkit-user-select: text; user-select: text; }
+html, body { background: #0A0A0A; color: #FFF; font-family: -apple-system, BlinkMacSystemFont, sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; touch-action: manipulation; min-height: 100vh; }
+body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+.app { width: 100%; min-height: 100vh; max-width: 500px; margin: 0 auto; }
+.screen { display: none; flex-direction: column; padding: 20px; min-height: 100vh; }
+.screen.active { display: flex; }
+
+/* HOME */
+.header { text-align: center; padding: 30px 0 40px; }
+.logo { font-size: 44px; font-weight: 800; letter-spacing: 4px; background: linear-gradient(135deg, #00D9FF 0%, #00FF88 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
+.subtitle { font-size: 12px; color: #666; letter-spacing: 2px; text-transform: uppercase; }
+.menu { display: flex; flex-direction: column; gap: 12px; }
+.menu-btn { display: flex; align-items: center; gap: 16px; padding: 18px 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; color: #FFF; font-size: 16px; font-weight: 500; cursor: pointer; transition: transform 0.1s; }
+.menu-btn:active { transform: scale(0.98); }
+.menu-btn.primary { background: linear-gradient(135deg, #00D9FF 0%, #00FF88 100%); border: none; color: #000; font-weight: 600; }
+.btn-icon { font-size: 24px; }
+.btn-text { flex: 1; text-align: left; }
+.btn-badge { background: rgba(0,217,255,0.2); color: #00D9FF; padding: 4px 10px; border-radius: 12px; font-size: 13px; font-weight: 600; }
+
+/* HEADER BAR */
+.header-bar { display: flex; align-items: center; justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid #222; margin-bottom: 20px; min-height: 50px; }
+.header-bar h2 { font-size: 18px; font-weight: 600; }
+.back-btn { background: none; border: none; color: #00D9FF; font-size: 15px; cursor: pointer; padding: 8px 12px; border-radius: 8px; font-weight: 500; }
+.back-btn:active { background: rgba(0,217,255,0.1); }
+.icon-btn { background: rgba(255,255,255,0.05); border: none; color: #FFF; font-size: 18px; width: 40px; height: 40px; border-radius: 10px; cursor: pointer; }
+.icon-btn:active { transform: scale(0.95); }
+
+/* SYNC SCREEN */
+.camera-wrap { position: relative; width: 100%; aspect-ratio: 4/3; border-radius: 16px; overflow: hidden; margin-bottom: 16px; background: #000; }
+.camera-view { width: 100%; height: 100%; object-fit: cover; }
+.scan-overlay { position: absolute; inset: 0; pointer-events: none; }
+.scan-frame { position: absolute; top: 30%; left: 10%; right: 10%; bottom: 30%; border: 3px solid #00D9FF; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); }
+.scan-hint { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center; color: #00D9FF; font-size: 13px; font-weight: 500; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
+.ocr-status { background: rgba(0,217,255,0.1); border: 1px solid #00D9FF; border-radius: 12px; padding: 14px; margin-bottom: 16px; text-align: center; }
+.ocr-status.success { background: rgba(0,255,136,0.1); border-color: #00FF88; }
+.ocr-status.error { background: rgba(255,59,92,0.1); border-color: #FF3B5C; }
+.ocr-label { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+.ocr-tc { font-family: 'SF Mono', 'Courier New', monospace; font-size: 28px; font-weight: 700; letter-spacing: 2px; }
+.sync-controls { display: flex; flex-direction: column; gap: 12px; }
+.row { display: flex; gap: 8px; }
+.fps-pill { flex: 1; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #FFF; font-size: 14px; font-weight: 600; cursor: pointer; text-align: center; }
+.fps-pill.active { background: rgba(0,217,255,0.2); border-color: #00D9FF; color: #00D9FF; }
+.btn-large { padding: 18px; font-size: 16px; font-weight: 600; border: none; border-radius: 12px; cursor: pointer; }
+.btn-large:active { transform: scale(0.98); }
+.btn-large.primary { background: rgba(0,217,255,0.15); color: #00D9FF; border: 1px solid #00D9FF; }
+.btn-large.success { background: #00FF88; color: #000; }
+.btn-large.success:disabled { opacity: 0.4; }
+.manual-input { display: flex; gap: 8px; align-items: center; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; }
+.manual-input input { flex: 1; background: none; border: none; color: #FFF; font-family: 'SF Mono', monospace; font-size: 20px; text-align: center; outline: none; letter-spacing: 2px; }
+
+/* REC SCREEN */
+.tc-display { text-align: center; padding: 30px 0; }
+.tc-value { font-family: 'SF Mono', 'Courier New', monospace; font-size: 52px; font-weight: 700; letter-spacing: 3px; background: linear-gradient(135deg, #00D9FF 0%, #00FF88 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.tc-info { font-size: 13px; color: #666; margin-top: 6px; }
+.rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #FF3B5C; animation: pulse 1.5s infinite; display: inline-block; margin-right: 6px; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.rec-status { display: flex; align-items: center; font-size: 13px; font-weight: 600; color: #FF3B5C; }
+.preset-buttons { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.preset-btn { display: flex; align-items: center; gap: 16px; padding: 22px; background: rgba(255,255,255,0.04); border: 2px solid var(--color); border-radius: 14px; color: #FFF; font-size: 18px; font-weight: 600; cursor: pointer; text-align: left; }
+.preset-btn:active { transform: scale(0.98); background: rgba(255,255,255,0.08); }
+.preset-emoji { font-size: 28px; }
+.preset-name { flex: 1; }
+.bottom-bar { display: flex; gap: 10px; margin-top: 16px; }
+.bottom-btn { flex: 1; padding: 14px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #FFF; font-size: 15px; font-weight: 600; cursor: pointer; }
+.bottom-btn:active { transform: scale(0.98); }
+.bottom-btn.danger { background: rgba(255,59,92,0.15); border-color: #FF3B5C; color: #FF3B5C; }
+
+/* MARKERS LIST */
+.markers-list { flex: 1; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; margin-bottom: 16px; padding-bottom: 8px; }
+.marker-item { position: relative; background: rgba(255,255,255,0.05); border-left: 4px solid var(--color); border-radius: 10px; padding: 14px; padding-right: 56px; }
+.marker-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.marker-emoji { font-size: 20px; }
+.marker-tc { font-family: 'SF Mono', monospace; font-size: 16px; font-weight: 600; color: var(--color); }
+.marker-name { font-size: 15px; font-weight: 500; }
+.marker-note { font-size: 13px; color: #999; margin-top: 4px; }
+.delete-btn { position: absolute; top: 12px; right: 12px; background: rgba(255,59,92,0.15); border: none; width: 32px; height: 32px; border-radius: 8px; font-size: 14px; cursor: pointer; color: #FF3B5C; }
+.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #666; gap: 6px; padding: 40px 0; }
+.export-bar { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.export-btn { padding: 14px; background: rgba(0,217,255,0.15); border: 1px solid #00D9FF; border-radius: 10px; color: #00D9FF; font-size: 13px; font-weight: 600; cursor: pointer; }
+.export-btn:active { transform: scale(0.98); }
+
+/* STATS */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+.stat-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; padding: 20px; text-align: center; }
+.stat-value { font-size: 32px; font-weight: 700; background: linear-gradient(135deg, #00D9FF 0%, #00FF88 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px; }
+.stat-value.tc { font-family: 'SF Mono', monospace; font-size: 18px; letter-spacing: 1px; }
+.stat-label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+.section-title { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+.breakdown-item { margin-bottom: 16px; }
+.breakdown-header { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 6px; }
+.progress-bar { height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; transition: width 0.3s; }
+
+/* SLATE */
+.slate-screen { background: #000; padding: 0; position: relative; }
+.slate-close { position: absolute; top: 20px; right: 20px; width: 44px; height: 44px; background: rgba(255,255,255,0.1); border: none; border-radius: 12px; color: #FFF; font-size: 22px; cursor: pointer; z-index: 10; }
+.slate-content { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 30px; gap: 24px; }
+.slate-field { display: flex; align-items: center; gap: 14px; }
+.slate-label { font-size: 16px; font-weight: 700; letter-spacing: 2px; color: #666; min-width: 70px; }
+.slate-input { background: none; border: none; border-bottom: 3px solid #FFF; color: #FFF; font-size: 40px; font-weight: 700; width: 100px; text-align: center; outline: none; font-family: 'SF Mono', monospace; }
+.slate-divider { width: 80%; height: 1px; background: rgba(255,255,255,0.2); }
+.slate-tc { font-family: 'SF Mono', monospace; font-size: 48px; font-weight: 700; letter-spacing: 3px; color: #00D9FF; }
+.slate-info { text-align: center; font-size: 14px; color: #888; display: flex; flex-direction: column; gap: 4px; }
+.slate-clap-btn { width: 100%; max-width: 400px; padding: 28px; background: linear-gradient(135deg, #00D9FF 0%, #00FF88 100%); border: none; border-radius: 14px; color: #000; font-size: 20px; font-weight: 700; letter-spacing: 2px; cursor: pointer; margin-top: 10px; }
+.slate-clap-btn:active { transform: scale(0.95); }
+.slate-flash { position: fixed; inset: 0; background: white; pointer-events: none; opacity: 0; z-index: 9999; }
+.slate-flash.active { animation: flash 0.4s; }
+@keyframes flash { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+
+/* SETTINGS */
+.settings-section { margin-bottom: 24px; }
+.setting-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.setting-group label { font-size: 12px; color: #999; text-transform: uppercase; letter-spacing: 1px; }
+.setting-input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #FFF; padding: 12px; border-radius: 10px; font-size: 16px; outline: none; width: 100%; }
+.setting-input:focus { border-color: #00D9FF; }
+.preset-edit { display: flex; gap: 8px; align-items: center; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 10px; margin-bottom: 8px; }
+.preset-edit-emoji { width: 50px; padding: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; text-align: center; font-size: 18px; outline: none; color: #FFF; }
+.preset-edit-input { flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 8px 10px; color: #FFF; font-size: 14px; outline: none; }
+.preset-edit-input:focus, .preset-edit-emoji:focus { border-color: #00D9FF; }
+.preset-color-picker { width: 40px; height: 40px; border: none; border-radius: 8px; cursor: pointer; background: none; }
+.preset-delete { background: rgba(255,59,92,0.15); border: none; width: 36px; height: 36px; border-radius: 8px; color: #FF3B5C; font-size: 14px; cursor: pointer; }
+.add-preset-btn { width: 100%; padding: 12px; background: rgba(0,217,255,0.1); border: 1px dashed #00D9FF; border-radius: 10px; color: #00D9FF; font-size: 14px; font-weight: 600; cursor: pointer; }
+
+/* TOAST */
+.toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); background: rgba(0,255,136,0.95); color: #000; padding: 14px 24px; border-radius: 12px; font-weight: 600; font-size: 14px; z-index: 1000; opacity: 0; transition: all 0.3s; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.error { background: rgba(255,59,92,0.95); color: #FFF; }
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- HOME -->
+<div id="home" class="screen active">
+  <div class="header">
+    <h1 class="logo">MARKER</h1>
+    <p class="subtitle">Video Production Tool</p>
+  </div>
+  <div class="menu">
+    <button class="menu-btn primary" onclick="App.openSync()">
+      <span class="btn-icon">📸</span>
+      <span class="btn-text">Sync Timecode</span>
+    </button>
+    <button class="menu-btn" onclick="App.startRec()">
+      <span class="btn-icon">⏺</span>
+      <span class="btn-text">Start Recording</span>
+    </button>
+    <button class="menu-btn" onclick="App.showScreen('slate')">
+      <span class="btn-icon">🎬</span>
+      <span class="btn-text">Digital Slate</span>
+    </button>
+    <button class="menu-btn" onclick="App.showScreen('markers')">
+      <span class="btn-icon">📋</span>
+      <span class="btn-text">Markers</span>
+      <span class="btn-badge" id="home-count">0</span>
+    </button>
+    <button class="menu-btn" onclick="App.showScreen('stats')">
+      <span class="btn-icon">📊</span>
+      <span class="btn-text">Session Stats</span>
+    </button>
+    <button class="menu-btn" onclick="App.showScreen('settings')">
+      <span class="btn-icon">⚙️</span>
+      <span class="btn-text">Settings</span>
+    </button>
+  </div>
+</div>
+
+<!-- SYNC -->
+<div id="sync" class="screen">
+  <div class="header-bar">
+    <button class="back-btn" onclick="App.closeSync()">← Späť</button>
+    <h2>Sync Timecode</h2>
+    <div style="width: 60px;"></div>
+  </div>
+  <div class="camera-wrap">
+    <video id="camera-video" class="camera-view" autoplay playsinline muted></video>
+    <canvas id="ocr-canvas" style="display:none;"></canvas>
+    <div class="scan-overlay">
+      <div class="scan-frame"></div>
+      <p class="scan-hint" id="scan-hint">Namier na timecode display</p>
+    </div>
+  </div>
+  <div class="ocr-status" id="ocr-status" style="display:none;">
+    <div class="ocr-label" id="ocr-label">Detected</div>
+    <div class="ocr-tc" id="ocr-tc">--:--:--:--</div>
+  </div>
+  <div class="sync-controls">
+    <div>
+      <div class="ocr-label" style="margin-bottom: 8px;">Frame Rate</div>
+      <div class="row" id="fps-pills"></div>
+    </div>
+    <button class="btn-large primary" onclick="App.runOCR()">
+      <span id="scan-btn-text">📸 Scan Timecode</span>
+    </button>
+    <div>
+      <div class="ocr-label" style="margin-bottom: 8px;">Or enter manually</div>
+      <div class="manual-input">
+        <input type="text" id="manual-tc" placeholder="00:00:00:00" maxlength="11">
+      </div>
+    </div>
+    <button class="btn-large success" id="sync-start-btn" onclick="App.syncAndStart()">✓ Sync & Start</button>
+  </div>
+</div>
+
+<!-- REC -->
+<div id="rec" class="screen">
+  <div class="header-bar">
+    <button class="icon-btn" onclick="App.showScreen('settings')">⚙️</button>
+    <div class="rec-status"><span class="rec-dot"></span>REC</div>
+    <button class="icon-btn" onclick="App.showScreen('stats')">📊</button>
+  </div>
+  <div class="tc-display">
+    <div class="tc-value" id="rec-tc">00:00:00:00</div>
+    <div class="tc-info"><span id="rec-fps">25</span>fps • <span id="rec-count">0</span> markers</div>
+  </div>
+  <div class="preset-buttons" id="preset-buttons"></div>
+  <div class="bottom-bar">
+    <button class="bottom-btn" onclick="App.showScreen('markers')">📋 <span id="rec-count-btn">0</span></button>
+    <button class="bottom-btn danger" onclick="App.stopRec()">⏸️ Stop</button>
+  </div>
+</div>
+
+<!-- MARKERS -->
+<div id="markers" class="screen">
+  <div class="header-bar">
+    <button class="back-btn" onclick="App.goBack()">← Späť</button>
+    <h2>Markers (<span id="markers-count">0</span>)</h2>
+    <div style="width: 60px;"></div>
+  </div>
+  <div class="markers-list" id="markers-list"></div>
+  <div class="export-bar" id="export-bar" style="display:none;">
+    <button class="export-btn" onclick="App.exportEDL()">📄 EDL (Resolve)</button>
+    <button class="export-btn" onclick="App.exportCSV()">📊 CSV</button>
+    <button class="export-btn" onclick="App.exportFCPXML()">🎬 FCPXML</button>
+    <button class="export-btn" onclick="App.exportJSON()">{ } JSON</button>
+  </div>
+</div>
+
+<!-- STATS -->
+<div id="stats" class="screen">
+  <div class="header-bar">
+    <button class="back-btn" onclick="App.goBack()">← Späť</button>
+    <h2>Session Stats</h2>
+    <div style="width: 60px;"></div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-total">0</div>
+      <div class="stat-label">Total Markers</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value tc" id="stat-tc">00:00:00:00</div>
+      <div class="stat-label">Current TC</div>
+    </div>
+  </div>
+  <h3 class="section-title">Breakdown</h3>
+  <div id="breakdown"></div>
+</div>
+
+<!-- SLATE -->
+<div id="slate" class="screen slate-screen">
+  <button class="slate-close" onclick="App.showScreen('home')">✕</button>
+  <div class="slate-content">
+    <div class="slate-field">
+      <span class="slate-label">SCENE</span>
+      <input class="slate-input" id="slate-scene" value="1">
+    </div>
+    <div class="slate-field">
+      <span class="slate-label">TAKE</span>
+      <input class="slate-input" id="slate-take" value="1">
+    </div>
+    <div class="slate-divider"></div>
+    <div class="slate-tc" id="slate-tc">00:00:00:00</div>
+    <div class="slate-divider"></div>
+    <div class="slate-info">
+      <div>Camera: <span id="slate-camera">A</span></div>
+      <div>Date: <span id="slate-date"></span></div>
+    </div>
+    <button class="slate-clap-btn" onclick="App.clap()">🎬 TAP TO CLAP</button>
+  </div>
+  <div class="slate-flash" id="slate-flash"></div>
+</div>
+
+<!-- SETTINGS -->
+<div id="settings" class="screen">
+  <div class="header-bar">
+    <button class="back-btn" onclick="App.goBack()">← Späť</button>
+    <h2>Settings</h2>
+    <div style="width: 60px;"></div>
+  </div>
+  <div class="settings-section">
+    <h3 class="section-title">Project</h3>
+    <div class="setting-group">
+      <label>Project Name</label>
+      <input type="text" id="setting-project" class="setting-input">
+    </div>
+    <div class="setting-group">
+      <label>Camera ID (for slate)</label>
+      <input type="text" id="setting-camera" class="setting-input" maxlength="2">
+    </div>
+    <div class="setting-group">
+      <label>Default FPS</label>
+      <select id="setting-fps" class="setting-input">
+        <option value="23.976">23.976 fps</option>
+        <option value="24">24 fps</option>
+        <option value="25" selected>25 fps</option>
+        <option value="29.97">29.97 fps</option>
+        <option value="30">30 fps</option>
+        <option value="50">50 fps</option>
+        <option value="59.94">59.94 fps</option>
+        <option value="60">60 fps</option>
+      </select>
+    </div>
+  </div>
+  <div class="settings-section">
+    <h3 class="section-title">Marker Presets</h3>
+    <div id="presets-edit-list"></div>
+    <button class="add-preset-btn" onclick="App.addPreset()">+ Add Preset</button>
+  </div>
+  <div class="settings-section">
+    <button class="btn-large danger" onclick="App.clearAll()" style="width:100%; background: rgba(255,59,92,0.15); color: #FF3B5C; border: 1px solid #FF3B5C;">🗑️ Clear All Markers</button>
+  </div>
+</div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const App = {
+  state: {
+    screen: 'home',
+    tc: { h: 0, m: 0, s: 0, f: 0 },
+    fps: 25,
+    isRunning: false,
+    startTime: null,
+    syncOffsetMs: 0,
+    markers: [],
+    presets: [
+      { id: 1, name: 'Setup', emoji: '🎬', color: '#00D9FF' },
+      { id: 2, name: 'Good Take', emoji: '✓', color: '#00FF88' },
+      { id: 3, name: 'Opakuj', emoji: '⟲', color: '#FFB800' },
+      { id: 4, name: 'Perfect!', emoji: '⭐', color: '#FF3B5C' }
+    ],
+    project: 'My Project',
+    camera: 'A',
+    cameraStream: null,
+    ocrWorker: null,
+    ocrScanning: false,
+    pendingTC: null,
+    animFrame: null,
+    history: []
+  },
+
+  init() {
+    this.load();
+    this.renderPresets();
+    this.renderPresetsEdit();
+    this.renderFpsPills();
+    this.updateCounts();
+    this.updateSettings();
+    document.getElementById('slate-date').textContent = new Date().toLocaleDateString('sk-SK');
+    document.getElementById('slate-camera').textContent = this.state.camera;
+  },
+
+  // ============ STORAGE ============
+  load() {
+    try {
+      const data = localStorage.getItem('markerApp');
+      if (data) {
+        const parsed = JSON.parse(data);
+        this.state.markers = parsed.markers || [];
+        this.state.presets = parsed.presets || this.state.presets;
+        this.state.project = parsed.project || 'My Project';
+        this.state.camera = parsed.camera || 'A';
+        this.state.fps = parsed.fps || 25;
+      }
+    } catch (e) { console.error('Load error:', e); }
+  },
+
+  save() {
+    try {
+      localStorage.setItem('markerApp', JSON.stringify({
+        markers: this.state.markers,
+        presets: this.state.presets,
+        project: this.state.project,
+        camera: this.state.camera,
+        fps: this.state.fps
+      }));
+    } catch (e) { console.error('Save error:', e); }
+  },
+
+  // ============ NAVIGATION ============
+  showScreen(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(name).classList.add('active');
+    this.state.history.push(this.state.screen);
+    this.state.screen = name;
+    if (name === 'markers') this.renderMarkers();
+    if (name === 'stats') this.renderStats();
+    if (name === 'settings') this.updateSettings();
+    if (name === 'slate') this.updateSlateTC();
+  },
+
+  goBack() {
+    const prev = this.state.history.pop() || 'home';
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(prev).classList.add('active');
+    this.state.screen = prev;
+  },
+
+  // ============ TIMECODE ============
+  msToTC(ms) {
+    const fps = this.state.fps;
+    const totalFrames = Math.floor(ms / (1000 / fps));
+    const f = totalFrames % Math.round(fps);
+    const totalSec = Math.floor(totalFrames / Math.round(fps));
+    const s = totalSec % 60;
+    const totalMin = Math.floor(totalSec / 60);
+    const m = totalMin % 60;
+    const h = Math.floor(totalMin / 60) % 24;
+    return { h, m, s, f };
+  },
+
+  tcToString(tc) {
+    return `${String(tc.h).padStart(2,'0')}:${String(tc.m).padStart(2,'0')}:${String(tc.s).padStart(2,'0')}:${String(tc.f).padStart(2,'0')}`;
+  },
+
+  tcToMs(tc) {
+    const fps = this.state.fps;
+    const totalFrames = tc.h * 3600 * fps + tc.m * 60 * fps + tc.s * fps + tc.f;
+    return totalFrames * (1000 / fps);
+  },
+
+  updateTC() {
+    if (!this.state.isRunning) return;
+    const elapsed = performance.now() - this.state.startTime;
+    const totalMs = elapsed + this.state.syncOffsetMs;
+    this.state.tc = this.msToTC(totalMs);
+    const tcStr = this.tcToString(this.state.tc);
+    document.getElementById('rec-tc').textContent = tcStr;
+    if (this.state.screen === 'slate') document.getElementById('slate-tc').textContent = tcStr;
+    this.state.animFrame = requestAnimationFrame(() => this.updateTC());
+  },
+
+  updateSlateTC() {
+    const tcStr = this.tcToString(this.state.tc);
+    document.getElementById('slate-tc').textContent = tcStr;
+  },
+
+  // ============ FPS PILLS ============
+  renderFpsPills() {
+    const rates = [23.976, 24, 25, 29.97, 30, 50, 60];
+    const container = document.getElementById('fps-pills');
+    container.innerHTML = rates.map(r => `
+      <button class="fps-pill ${r === this.state.fps ? 'active' : ''}" onclick="App.setFps(${r})">${r === Math.floor(r) ? r : r.toFixed(2)}</button>
+    `).join('');
+  },
+
+  setFps(fps) {
+    this.state.fps = fps;
+    this.renderFpsPills();
+    document.getElementById('rec-fps').textContent = fps;
+    this.save();
+  },
+
+  // ============ SYNC / OCR ============
+  async openSync() {
+    this.showScreen('sync');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      this.state.cameraStream = stream;
+      document.getElementById('camera-video').srcObject = stream;
+    } catch (e) {
+      this.toast('Nemôžem spustiť kameru: ' + e.message, true);
+    }
+  },
+
+  closeSync() {
+    if (this.state.cameraStream) {
+      this.state.cameraStream.getTracks().forEach(t => t.stop());
+      this.state.cameraStream = null;
+    }
+    this.goBack();
+  },
+
+  async runOCR() {
+    if (this.state.ocrScanning) return;
+    if (!this.state.cameraStream) {
+      this.toast('Najprv spusti kameru', true);
+      return;
+    }
+
+    this.state.ocrScanning = true;
+    document.getElementById('scan-btn-text').textContent = '⏳ Scanning...';
+    document.getElementById('scan-hint').textContent = 'Spracovávam...';
+
+    try {
+      // Capture frame
+      const video = document.getElementById('camera-video');
+      const canvas = document.getElementById('ocr-canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      
+      // Crop to center area (where scan frame is)
+      const cropX = video.videoWidth * 0.1;
+      const cropY = video.videoHeight * 0.3;
+      const cropW = video.videoWidth * 0.8;
+      const cropH = video.videoHeight * 0.4;
+      
+      canvas.width = cropW;
+      canvas.height = cropH;
+      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      
+      // Enhance contrast
+      const imgData = ctx.getImageData(0, 0, cropW, cropH);
+      const data = imgData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] + data[i+1] + data[i+2]) / 3;
+        const enhanced = avg > 128 ? 255 : 0;
+        data[i] = data[i+1] = data[i+2] = enhanced;
+      }
+      ctx.putImageData(imgData, 0, 0);
+
+      // Initialize Tesseract if needed
+      if (!this.state.ocrWorker) {
+        this.state.ocrWorker = await Tesseract.createWorker('eng', 1, {
+          logger: () => {}
+        });
+        await this.state.ocrWorker.setParameters({
+          tessedit_char_whitelist: '0123456789:.',
+        });
+      }
+
+      const result = await this.state.ocrWorker.recognize(canvas);
+      const text = result.data.text;
+      
+      // Parse timecode pattern
+      const patterns = [
+        /(\d{2}):(\d{2}):(\d{2})[:.](\d{2,3})/,
+        /(\d{1,2}):(\d{2}):(\d{2})[:.](\d{1,3})/
+      ];
+      
+      let found = null;
+      for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match) {
+          const h = parseInt(match[1]);
+          const m = parseInt(match[2]);
+          const s = parseInt(match[3]);
+          let f = parseInt(match[4]);
+          
+          if (h <= 23 && m <= 59 && s <= 59 && f <= Math.round(this.state.fps)) {
+            found = { h, m, s, f };
+            break;
+          }
+        }
+      }
+      
+      if (found) {
+        this.state.pendingTC = found;
+        const tcStr = this.tcToString(found);
+        document.getElementById('ocr-tc').textContent = tcStr;
+        document.getElementById('ocr-status').style.display = 'block';
+        document.getElementById('ocr-status').className = 'ocr-status success';
+        document.getElementById('ocr-label').textContent = '✓ Detected Timecode';
+        document.getElementById('scan-hint').textContent = '✓ Timecode rozpoznaný!';
+        if (navigator.vibrate) navigator.vibrate(50);
+      } else {
+        document.getElementById('ocr-status').style.display = 'block';
+        document.getElementById('ocr-status').className = 'ocr-status error';
+        document.getElementById('ocr-label').textContent = '✗ Not detected';
+        document.getElementById('ocr-tc').textContent = text.trim().substring(0, 20) || '---';
+        document.getElementById('scan-hint').textContent = 'Skús znova, lepšie zameraj';
+      }
+    } catch (e) {
+      console.error(e);
+      this.toast('OCR error: ' + e.message, true);
+    }
+
+    this.state.ocrScanning = false;
+    document.getElementById('scan-btn-text').textContent = '📸 Scan Timecode';
+  },
+
+  syncAndStart() {
+    let tc = this.state.pendingTC;
+    
+    // Check manual input
+    const manualInput = document.getElementById('manual-tc').value.trim();
+    if (manualInput) {
+      const match = manualInput.match(/(\d{1,2}):(\d{2}):(\d{2})[:.](\d{1,3})/);
+      if (match) {
+        tc = {
+          h: parseInt(match[1]),
+          m: parseInt(match[2]),
+          s: parseInt(match[3]),
+          f: parseInt(match[4])
+        };
+      }
+    }
+    
+    if (!tc) {
+      tc = { h: 0, m: 0, s: 0, f: 0 };
+    }
+    
+    this.state.syncOffsetMs = this.tcToMs(tc);
+    this.state.tc = tc;
+    this.closeSync();
+    this.startRec();
+    this.toast('✓ Synced @ ' + this.tcToString(tc));
+  },
+
+  // ============ REC ============
+  startRec() {
+    this.state.isRunning = true;
+    this.state.startTime = performance.now();
+    document.getElementById('rec-fps').textContent = this.state.fps;
+    this.showScreen('rec');
+    this.updateTC();
+  },
+
+  stopRec() {
+    this.state.isRunning = false;
+    if (this.state.animFrame) cancelAnimationFrame(this.state.animFrame);
+    this.showScreen('home');
+  },
+
+  renderPresets() {
+    const container = document.getElementById('preset-buttons');
+    container.innerHTML = this.state.presets.map(p => `
+      <button class="preset-btn" style="--color: ${p.color}" onclick="App.addMarker(${p.id})">
+        <span class="preset-emoji">${p.emoji}</span>
+        <span class="preset-name">${p.name}</span>
+      </button>
+    `).join('');
+  },
+
+  addMarker(presetId) {
+    const preset = this.state.presets.find(p => p.id === presetId);
+    if (!preset) return;
+    
+    const marker = {
+      id: Date.now() + Math.random(),
+      tc: this.tcToString(this.state.tc),
+      name: preset.name,
+      color: preset.color,
+      emoji: preset.emoji,
+      timestamp: new Date().toISOString()
+    };
+    
+    this.state.markers.push(marker);
+    this.save();
+    this.updateCounts();
+    
+    if (navigator.vibrate) navigator.vibrate(50);
+    this.toast(`✓ ${preset.name} @ ${marker.tc}`);
+  },
+
+  deleteMarker(id) {
+    this.state.markers = this.state.markers.filter(m => m.id !== id);
+    this.save();
+    this.renderMarkers();
+    this.updateCounts();
+  },
+
+  // ============ MARKERS LIST ============
+  renderMarkers() {
+    const container = document.getElementById('markers-list');
+    const exportBar = document.getElementById('export-bar');
+    document.getElementById('markers-count').textContent = this.state.markers.length;
+    
+    if (this.state.markers.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div style="font-size:48px;">📋</div><p>Zatiaľ žiadne markery</p><p style="font-size:13px;">Pridaj markery počas natáčania</p></div>';
+      exportBar.style.display = 'none';
+      return;
+    }
+    
+    exportBar.style.display = 'grid';
+    const sorted = [...this.state.markers].sort((a,b) => a.tc.localeCompare(b.tc));
+    container.innerHTML = sorted.map(m => `
+      <div class="marker-item" style="--color: ${m.color}">
+        <div class="marker-header">
+          <span class="marker-emoji">${m.emoji}</span>
+          <span class="marker-tc">${m.tc}</span>
+        </div>
+        <div class="marker-name">${m.name}</div>
+        <button class="delete-btn" onclick="App.deleteMarker(${m.id})">🗑️</button>
+      </div>
+    `).join('');
+  },
+
+  // ============ STATS ============
+  renderStats() {
+    const total = this.state.markers.length;
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-tc').textContent = this.tcToString(this.state.tc);
+    
+    const breakdown = {};
+    this.state.presets.forEach(p => {
+      breakdown[p.name] = { count: 0, color: p.color, emoji: p.emoji };
+    });
+    this.state.markers.forEach(m => {
+      if (breakdown[m.name]) breakdown[m.name].count++;
+    });
+    
+    const container = document.getElementById('breakdown');
+    if (total === 0) {
+      container.innerHTML = '<p style="color:#666; text-align:center; padding:40px;">Žiadne dáta</p>';
+      return;
+    }
+    
+    container.innerHTML = Object.entries(breakdown).map(([name, data]) => {
+      const pct = total > 0 ? Math.round((data.count / total) * 100) : 0;
+      return `
+        <div class="breakdown-item">
+          <div class="breakdown-header">
+            <span>${data.emoji} ${name}</span>
+            <span>${data.count} (${pct}%)</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${pct}%; background:${data.color}"></div></div>
+        </div>
+      `;
+    }).join('');
+  },
+
+  // ============ SLATE ============
+  clap() {
+    const flash = document.getElementById('slate-flash');
+    flash.classList.remove('active');
+    void flash.offsetWidth;
+    flash.classList.add('active');
+    
+    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+    
+    const scene = document.getElementById('slate-scene').value;
+    const take = document.getElementById('slate-take').value;
+    
+    if (!this.state.isRunning) {
+      this.toast('Najprv spusti recording (Sync TC)', true);
+      return;
+    }
+    
+    const marker = {
+      id: Date.now() + Math.random(),
+      tc: this.tcToString(this.state.tc),
+      name: `Scene ${scene} Take ${take}`,
+      color: '#00D9FF',
+      emoji: '🎬',
+      timestamp: new Date().toISOString()
+    };
+    
+    this.state.markers.push(marker);
+    this.save();
+    this.updateCounts();
+    
+    // Auto-increment take
+    document.getElementById('slate-take').value = parseInt(take) + 1;
+    
+    this.toast(`🎬 Scene ${scene} Take ${take}`);
+  },
+
+  // ============ SETTINGS ============
+  updateSettings() {
+    document.getElementById('setting-project').value = this.state.project;
+    document.getElementById('setting-camera').value = this.state.camera;
+    document.getElementById('setting-fps').value = this.state.fps;
+    
+    document.getElementById('setting-project').onchange = (e) => {
+      this.state.project = e.target.value;
+      this.save();
+    };
+    document.getElementById('setting-camera').onchange = (e) => {
+      this.state.camera = e.target.value.toUpperCase();
+      document.getElementById('slate-camera').textContent = this.state.camera;
+      this.save();
+    };
+    document.getElementById('setting-fps').onchange = (e) => {
+      this.state.fps = parseFloat(e.target.value);
+      this.renderFpsPills();
+      this.save();
+    };
+  },
+
+  renderPresetsEdit() {
+    const container = document.getElementById('presets-edit-list');
+    container.innerHTML = this.state.presets.map((p, i) => `
+      <div class="preset-edit">
+        <input class="preset-edit-emoji" value="${p.emoji}" onchange="App.updatePreset(${p.id}, 'emoji', this.value)">
+        <input class="preset-edit-input" value="${p.name}" onchange="App.updatePreset(${p.id}, 'name', this.value)">
+        <input type="color" class="preset-color-picker" value="${p.color}" onchange="App.updatePreset(${p.id}, 'color', this.value)">
+        <button class="preset-delete" onclick="App.deletePreset(${p.id})">🗑️</button>
+      </div>
+    `).join('');
+  },
+
+  updatePreset(id, field, value) {
+    const preset = this.state.presets.find(p => p.id === id);
+    if (preset) {
+      preset[field] = value;
+      this.save();
+      this.renderPresets();
+    }
+  },
+
+  deletePreset(id) {
+    if (this.state.presets.length <= 1) {
+      this.toast('Musíš mať aspoň 1 preset', true);
+      return;
+    }
+    this.state.presets = this.state.presets.filter(p => p.id !== id);
+    this.save();
+    this.renderPresets();
+    this.renderPresetsEdit();
+  },
+
+  addPreset() {
+    if (this.state.presets.length >= 16) {
+      this.toast('Max 16 presetov', true);
+      return;
+    }
+    const colors = ['#00D9FF', '#00FF88', '#FFB800', '#FF3B5C', '#AF52DE', '#FF9500'];
+    this.state.presets.push({
+      id: Date.now(),
+      name: 'New',
+      emoji: '⭐',
+      color: colors[this.state.presets.length % colors.length]
+    });
+    this.save();
+    this.renderPresets();
+    this.renderPresetsEdit();
+  },
+
+  clearAll() {
+    if (confirm('Naozaj zmazať všetky markery?')) {
+      this.state.markers = [];
+      this.save();
+      this.updateCounts();
+      this.renderMarkers();
+      this.toast('Všetky markery zmazané');
+    }
+  },
+
+  // ============ EXPORTS ============
+  exportEDL() {
+    const project = this.state.project.replace(/[^a-zA-Z0-9]/g, '_');
+    let edl = `TITLE: ${this.state.project}\nFCM: NON-DROP FRAME\n\n`;
+    const sorted = [...this.state.markers].sort((a,b) => a.tc.localeCompare(b.tc));
+    sorted.forEach((m, i) => {
+      const num = String(i + 1).padStart(3, '0');
+      edl += `${num}  AX       V     C        ${m.tc} ${m.tc} 00:00:00:00 00:00:00:00\n`;
+      edl += `* FROM CLIP NAME: ${m.name}\n\n`;
+    });
+    this.download(edl, `${project}_markers.edl`, 'text/plain');
+  },
+
+  exportCSV() {
+    const project = this.state.project.replace(/[^a-zA-Z0-9]/g, '_');
+    let csv = 'Timecode,Name,Color,Emoji\n';
+    const sorted = [...this.state.markers].sort((a,b) => a.tc.localeCompare(b.tc));
+    sorted.forEach(m => {
+      csv += `${m.tc},"${m.name}",${m.color},${m.emoji}\n`;
+    });
+    this.download(csv, `${project}_markers.csv`, 'text/csv');
+  },
+
+  exportFCPXML() {
+    const project = this.state.project.replace(/[^a-zA-Z0-9]/g, '_');
+    const fps = this.state.fps;
+    const sorted = [...this.state.markers].sort((a,b) => a.tc.localeCompare(b.tc));
+    
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n<fcpxml version="1.11">\n  <resources>\n    <format id="r1" frameDuration="1/${Math.round(fps)}s"/>\n  </resources>\n  <library>\n    <event name="${this.state.project}">\n      <project name="Markers">\n        <sequence format="r1">\n          <spine>\n`;
+    
+    sorted.forEach(m => {
+      const parts = m.tc.split(':');
+      const totalFrames = parseInt(parts[0])*3600*fps + parseInt(parts[1])*60*fps + parseInt(parts[2])*fps + parseInt(parts[3]);
+      xml += `            <marker start="${Math.round(totalFrames)}/${Math.round(fps)}s" duration="1/${Math.round(fps)}s" value="${m.name}"/>\n`;
+    });
+    
+    xml += `          </spine>\n        </sequence>\n      </project>\n    </event>\n  </library>\n</fcpxml>`;
+    this.download(xml, `${project}_markers.fcpxml`, 'application/xml');
+  },
+
+  exportJSON() {
+    const project = this.state.project.replace(/[^a-zA-Z0-9]/g, '_');
+    const data = {
+      project: this.state.project,
+      camera: this.state.camera,
+      fps: this.state.fps,
+      exported: new Date().toISOString(),
+      markers: [...this.state.markers].sort((a,b) => a.tc.localeCompare(b.tc))
+    };
+    this.download(JSON.stringify(data, null, 2), `${project}_markers.json`, 'application/json');
+  },
+
+  download(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    this.toast(`✓ Exported ${filename}`);
+  },
+
+  // ============ UTILS ============
+  updateCounts() {
+    const c = this.state.markers.length;
+    document.getElementById('home-count').textContent = c;
+    document.getElementById('rec-count').textContent = c;
+    document.getElementById('rec-count-btn').textContent = c;
+    document.getElementById('markers-count').textContent = c;
+  },
+
+  toast(msg, isError) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (isError ? ' error' : '');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+};
+
+// Init
+App.init();
+</script>
+</body>
+</html>
