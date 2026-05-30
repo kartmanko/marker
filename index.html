@@ -360,6 +360,7 @@ const App = {
     ocrWorker: null,
     ocrScanning: false,
     pendingTC: null,
+    pendingScanTime: null,
     animFrame: null,
     history: []
   },
@@ -511,7 +512,8 @@ const App = {
     document.getElementById('scan-hint').textContent = 'Spracovávam...';
 
     try {
-      // Capture frame
+      // Capture frame — zaznamenaj PRESNÝ moment zachytenia obrázka
+      const captureTimestamp = performance.now();
       const video = document.getElementById('camera-video');
       const canvas = document.getElementById('ocr-canvas');
       canvas.width = video.videoWidth;
@@ -575,6 +577,7 @@ const App = {
       
       if (found) {
         this.state.pendingTC = found;
+        this.state.pendingScanTime = captureTimestamp;
         const tcStr = this.tcToString(found);
         document.getElementById('ocr-tc').textContent = tcStr;
         document.getElementById('ocr-status').style.display = 'block';
@@ -600,7 +603,9 @@ const App = {
 
   syncAndStart() {
     let tc = this.state.pendingTC;
-    
+    // moment, kedy daný timecode reálne platil (zachytenie OCR frame)
+    let captureTime = this.state.pendingScanTime;
+
     // Check manual input
     const manualInput = document.getElementById('manual-tc').value.trim();
     if (manualInput) {
@@ -612,18 +617,31 @@ const App = {
           s: parseInt(match[3]),
           f: parseInt(match[4])
         };
+        // pri manuálnom zadaní berieme moment stlačenia ako referenciu
+        captureTime = performance.now();
       }
     }
-    
+
     if (!tc) {
       tc = { h: 0, m: 0, s: 0, f: 0 };
+      captureTime = performance.now();
     }
-    
-    this.state.syncOffsetMs = this.tcToMs(tc);
-    this.state.tc = tc;
+    if (captureTime == null) captureTime = performance.now();
+
+    // KOMPENZÁCIA MEŠKANIA:
+    // koľko času ubehlo od zachytenia TC (OCR scan / manuál) po teraz
+    const now = performance.now();
+    const delayMs = now - captureTime;
+    // offset = naskenovaný TC + ubehnutý čas → appka "dobehne" kameru
+    this.state.syncOffsetMs = this.tcToMs(tc) + delayMs;
+    this.state.startTime = now;
+    this.state.isRunning = true;
+
     this.closeSync();
-    this.startRec();
-    this.toast('✓ Synced @ ' + this.tcToString(tc));
+    document.getElementById('rec-fps').textContent = this.state.fps;
+    this.showScreen('rec');
+    this.updateTC();
+    this.toast('✓ Synced @ ' + this.tcToString(this.msToTC(this.state.syncOffsetMs)));
   },
 
   // ============ REC ============
