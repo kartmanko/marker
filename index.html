@@ -8,7 +8,6 @@
 <meta name="apple-mobile-web-app-title" content="Marker">
 <meta name="theme-color" content="#0A0A0A">
 <title>Marker - Video Production Tool</title>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 :root {
   --bg: #0B0B0D;
@@ -210,6 +209,17 @@ body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inse
 .cam-slider { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; }
 .cam-slider-lbl { font-size: 10px; color: var(--text-faint); font-family: var(--mono); letter-spacing: 1px; width: 38px; }
 .cam-slider input[type=range] { flex: 1; accent-color: var(--accent); }
+.manual-block { display: flex; flex-direction: column; gap: 12px; }
+.manual-tc-display { text-align: center; font-family: var(--mono); font-size: 38px; font-weight: 600; letter-spacing: 2px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
+.mtc-pair { color: var(--text); }
+.mtc-pair.empty { color: var(--text-faint); }
+.mtc-sep { color: var(--text-faint); margin: 0 2px; }
+.numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.numpad button { padding: 20px 0; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 24px; font-weight: 600; font-family: var(--mono); cursor: pointer; }
+.numpad button:active { background: var(--surface-2); }
+.numpad .np-clear { color: var(--text-dim); font-size: 18px; }
+.numpad .np-back { color: var(--text-dim); }
+.manual-tip { font-size: 11px; color: var(--text-faint); line-height: 1.4; padding: 0 4px; }
 </style>
 </head>
 <body>
@@ -308,13 +318,30 @@ body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inse
     <button class="btn-large primary" onclick="App.runOCR()">
       <span id="scan-btn-text">Scan Timecode</span>
     </button>
-    <div>
-      <div class="ocr-label" style="margin-bottom: 8px;">Or enter manually</div>
-      <div class="manual-input">
-        <input type="text" id="manual-tc" placeholder="00:00:00:00" maxlength="11">
+
+    <div class="manual-block">
+      <div class="ocr-label" style="margin-bottom:8px;">Zadaj timecode</div>
+      <div class="manual-tc-display" id="manual-tc-display">
+        <span class="mtc-pair" id="mtc-h">--</span><span class="mtc-sep">:</span><span class="mtc-pair" id="mtc-m">--</span><span class="mtc-sep">:</span><span class="mtc-pair" id="mtc-s">--</span><span class="mtc-sep">:</span><span class="mtc-pair" id="mtc-f">--</span>
       </div>
+      <div class="numpad">
+        <button onclick="App.manualDigit('1')">1</button>
+        <button onclick="App.manualDigit('2')">2</button>
+        <button onclick="App.manualDigit('3')">3</button>
+        <button onclick="App.manualDigit('4')">4</button>
+        <button onclick="App.manualDigit('5')">5</button>
+        <button onclick="App.manualDigit('6')">6</button>
+        <button onclick="App.manualDigit('7')">7</button>
+        <button onclick="App.manualDigit('8')">8</button>
+        <button onclick="App.manualDigit('9')">9</button>
+        <button class="np-clear" onclick="App.manualClear()">C</button>
+        <button onclick="App.manualDigit('0')">0</button>
+        <button class="np-back" onclick="App.manualBackspace()">⌫</button>
+      </div>
+      <div class="manual-tip">Tip: zadaj TC o pár sekúnd dopredu a stlač SYNC presne vo chvíli, keď ho kamera dosiahne — bude to presné na frame.</div>
     </div>
-    <button class="btn-large success" id="sync-start-btn" onclick="App.syncAndStart()">✓ Sync & Start</button>
+
+    <button class="btn-large success" id="sync-start-btn" onclick="App.syncAndStart()">SYNC &amp; START</button>
   </div>
 </div>
 
@@ -426,6 +453,11 @@ body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inse
         <option value="59.94">59.94 fps</option>
         <option value="60">60 fps</option>
       </select>
+    </div>
+    <div class="setting-group">
+      <label>OCR Cloud API kľúč (ocr.space)</label>
+      <input type="text" id="setting-ocrkey" class="setting-input" placeholder="vlastný kľúč z ocr.space/ocrapi">
+      <div class="manual-tip" style="margin-top:2px;">Prázdne = demo kľúč (limitovaný). Pre klienta si vytvor vlastný free kľúč na ocr.space/ocrapi.</div>
     </div>
   </div>
   <div class="settings-section">
@@ -539,6 +571,327 @@ body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inse
 <div class="toast" id="toast"></div>
 
 <script>
+/* === SunCalc (c) Vladimir Agafonkin, MIT === */
+/*
+ (c) 2011-2015, Vladimir Agafonkin
+ SunCalc is a JavaScript library for calculating sun/moon position and light phases.
+ https://github.com/mourner/suncalc
+*/
+
+(function () { 'use strict';
+
+// shortcuts for easier to read formulas
+
+var PI   = Math.PI,
+    sin  = Math.sin,
+    cos  = Math.cos,
+    tan  = Math.tan,
+    asin = Math.asin,
+    atan = Math.atan2,
+    acos = Math.acos,
+    rad  = PI / 180;
+
+// sun calculations are based on http://aa.quae.nl/en/reken/zonpositie.html formulas
+
+
+// date/time constants and conversions
+
+var dayMs = 1000 * 60 * 60 * 24,
+    J1970 = 2440588,
+    J2000 = 2451545;
+
+function toJulian(date) { return date.valueOf() / dayMs - 0.5 + J1970; }
+function fromJulian(j)  { return new Date((j + 0.5 - J1970) * dayMs); }
+function toDays(date)   { return toJulian(date) - J2000; }
+
+
+// general calculations for position
+
+var e = rad * 23.4397; // obliquity of the Earth
+
+function rightAscension(l, b) { return atan(sin(l) * cos(e) - tan(b) * sin(e), cos(l)); }
+function declination(l, b)    { return asin(sin(b) * cos(e) + cos(b) * sin(e) * sin(l)); }
+
+function azimuth(H, phi, dec)  { return atan(sin(H), cos(H) * sin(phi) - tan(dec) * cos(phi)); }
+function altitude(H, phi, dec) { return asin(sin(phi) * sin(dec) + cos(phi) * cos(dec) * cos(H)); }
+
+function siderealTime(d, lw) { return rad * (280.16 + 360.9856235 * d) - lw; }
+
+function astroRefraction(h) {
+    if (h < 0) // the following formula works for positive altitudes only.
+        h = 0; // if h = -0.08901179 a div/0 would occur.
+
+    // formula 16.4 of "Astronomical Algorithms" 2nd edition by Jean Meeus (Willmann-Bell, Richmond) 1998.
+    // 1.02 / tan(h + 10.26 / (h + 5.10)) h in degrees, result in arc minutes -> converted to rad:
+    return 0.0002967 / Math.tan(h + 0.00312536 / (h + 0.08901179));
+}
+
+// general sun calculations
+
+function solarMeanAnomaly(d) { return rad * (357.5291 + 0.98560028 * d); }
+
+function eclipticLongitude(M) {
+
+    var C = rad * (1.9148 * sin(M) + 0.02 * sin(2 * M) + 0.0003 * sin(3 * M)), // equation of center
+        P = rad * 102.9372; // perihelion of the Earth
+
+    return M + C + P + PI;
+}
+
+function sunCoords(d) {
+
+    var M = solarMeanAnomaly(d),
+        L = eclipticLongitude(M);
+
+    return {
+        dec: declination(L, 0),
+        ra: rightAscension(L, 0)
+    };
+}
+
+
+var SunCalc = {};
+
+
+// calculates sun position for a given date and latitude/longitude
+
+SunCalc.getPosition = function (date, lat, lng) {
+
+    var lw  = rad * -lng,
+        phi = rad * lat,
+        d   = toDays(date),
+
+        c  = sunCoords(d),
+        H  = siderealTime(d, lw) - c.ra;
+
+    return {
+        azimuth: azimuth(H, phi, c.dec),
+        altitude: altitude(H, phi, c.dec)
+    };
+};
+
+
+// sun times configuration (angle, morning name, evening name)
+
+var times = SunCalc.times = [
+    [-0.833, 'sunrise',       'sunset'      ],
+    [  -0.3, 'sunriseEnd',    'sunsetStart' ],
+    [    -6, 'dawn',          'dusk'        ],
+    [   -12, 'nauticalDawn',  'nauticalDusk'],
+    [   -18, 'nightEnd',      'night'       ],
+    [     6, 'goldenHourEnd', 'goldenHour'  ]
+];
+
+// adds a custom time to the times config
+
+SunCalc.addTime = function (angle, riseName, setName) {
+    times.push([angle, riseName, setName]);
+};
+
+
+// calculations for sun times
+
+var J0 = 0.0009;
+
+function julianCycle(d, lw) { return Math.round(d - J0 - lw / (2 * PI)); }
+
+function approxTransit(Ht, lw, n) { return J0 + (Ht + lw) / (2 * PI) + n; }
+function solarTransitJ(ds, M, L)  { return J2000 + ds + 0.0053 * sin(M) - 0.0069 * sin(2 * L); }
+
+function hourAngle(h, phi, d) { return acos((sin(h) - sin(phi) * sin(d)) / (cos(phi) * cos(d))); }
+function observerAngle(height) { return -2.076 * Math.sqrt(height) / 60; }
+
+// returns set time for the given sun altitude
+function getSetJ(h, lw, phi, dec, n, M, L) {
+
+    var w = hourAngle(h, phi, dec),
+        a = approxTransit(w, lw, n);
+    return solarTransitJ(a, M, L);
+}
+
+
+// calculates sun times for a given date, latitude/longitude, and, optionally,
+// the observer height (in meters) relative to the horizon
+
+SunCalc.getTimes = function (date, lat, lng, height) {
+
+    height = height || 0;
+
+    var lw = rad * -lng,
+        phi = rad * lat,
+
+        dh = observerAngle(height),
+
+        d = toDays(date),
+        n = julianCycle(d, lw),
+        ds = approxTransit(0, lw, n),
+
+        M = solarMeanAnomaly(ds),
+        L = eclipticLongitude(M),
+        dec = declination(L, 0),
+
+        Jnoon = solarTransitJ(ds, M, L),
+
+        i, len, time, h0, Jset, Jrise;
+
+
+    var result = {
+        solarNoon: fromJulian(Jnoon),
+        nadir: fromJulian(Jnoon - 0.5)
+    };
+
+    for (i = 0, len = times.length; i < len; i += 1) {
+        time = times[i];
+        h0 = (time[0] + dh) * rad;
+
+        Jset = getSetJ(h0, lw, phi, dec, n, M, L);
+        Jrise = Jnoon - (Jset - Jnoon);
+
+        result[time[1]] = fromJulian(Jrise);
+        result[time[2]] = fromJulian(Jset);
+    }
+
+    return result;
+};
+
+
+// moon calculations, based on http://aa.quae.nl/en/reken/hemelpositie.html formulas
+
+function moonCoords(d) { // geocentric ecliptic coordinates of the moon
+
+    var L = rad * (218.316 + 13.176396 * d), // ecliptic longitude
+        M = rad * (134.963 + 13.064993 * d), // mean anomaly
+        F = rad * (93.272 + 13.229350 * d),  // mean distance
+
+        l  = L + rad * 6.289 * sin(M), // longitude
+        b  = rad * 5.128 * sin(F),     // latitude
+        dt = 385001 - 20905 * cos(M);  // distance to the moon in km
+
+    return {
+        ra: rightAscension(l, b),
+        dec: declination(l, b),
+        dist: dt
+    };
+}
+
+SunCalc.getMoonPosition = function (date, lat, lng) {
+
+    var lw  = rad * -lng,
+        phi = rad * lat,
+        d   = toDays(date),
+
+        c = moonCoords(d),
+        H = siderealTime(d, lw) - c.ra,
+        h = altitude(H, phi, c.dec),
+        // formula 14.1 of "Astronomical Algorithms" 2nd edition by Jean Meeus (Willmann-Bell, Richmond) 1998.
+        pa = atan(sin(H), tan(phi) * cos(c.dec) - sin(c.dec) * cos(H));
+
+    h = h + astroRefraction(h); // altitude correction for refraction
+
+    return {
+        azimuth: azimuth(H, phi, c.dec),
+        altitude: h,
+        distance: c.dist,
+        parallacticAngle: pa
+    };
+};
+
+
+// calculations for illumination parameters of the moon,
+// based on http://idlastro.gsfc.nasa.gov/ftp/pro/astro/mphase.pro formulas and
+// Chapter 48 of "Astronomical Algorithms" 2nd edition by Jean Meeus (Willmann-Bell, Richmond) 1998.
+
+SunCalc.getMoonIllumination = function (date) {
+
+    var d = toDays(date || new Date()),
+        s = sunCoords(d),
+        m = moonCoords(d),
+
+        sdist = 149598000, // distance from Earth to Sun in km
+
+        phi = acos(sin(s.dec) * sin(m.dec) + cos(s.dec) * cos(m.dec) * cos(s.ra - m.ra)),
+        inc = atan(sdist * sin(phi), m.dist - sdist * cos(phi)),
+        angle = atan(cos(s.dec) * sin(s.ra - m.ra), sin(s.dec) * cos(m.dec) -
+                cos(s.dec) * sin(m.dec) * cos(s.ra - m.ra));
+
+    return {
+        fraction: (1 + cos(inc)) / 2,
+        phase: 0.5 + 0.5 * inc * (angle < 0 ? -1 : 1) / Math.PI,
+        angle: angle
+    };
+};
+
+
+function hoursLater(date, h) {
+    return new Date(date.valueOf() + h * dayMs / 24);
+}
+
+// calculations for moon rise/set times are based on http://www.stargazing.net/kepler/moonrise.html article
+
+SunCalc.getMoonTimes = function (date, lat, lng, inUTC) {
+    var t = new Date(date);
+    if (inUTC) t.setUTCHours(0, 0, 0, 0);
+    else t.setHours(0, 0, 0, 0);
+
+    var hc = 0.133 * rad,
+        h0 = SunCalc.getMoonPosition(t, lat, lng).altitude - hc,
+        h1, h2, rise, set, a, b, xe, ye, d, roots, x1, x2, dx;
+
+    // go in 2-hour chunks, each time seeing if a 3-point quadratic curve crosses zero (which means rise or set)
+    for (var i = 1; i <= 24; i += 2) {
+        h1 = SunCalc.getMoonPosition(hoursLater(t, i), lat, lng).altitude - hc;
+        h2 = SunCalc.getMoonPosition(hoursLater(t, i + 1), lat, lng).altitude - hc;
+
+        a = (h0 + h2) / 2 - h1;
+        b = (h2 - h0) / 2;
+        xe = -b / (2 * a);
+        ye = (a * xe + b) * xe + h1;
+        d = b * b - 4 * a * h1;
+        roots = 0;
+
+        if (d >= 0) {
+            dx = Math.sqrt(d) / (Math.abs(a) * 2);
+            x1 = xe - dx;
+            x2 = xe + dx;
+            if (Math.abs(x1) <= 1) roots++;
+            if (Math.abs(x2) <= 1) roots++;
+            if (x1 < -1) x1 = x2;
+        }
+
+        if (roots === 1) {
+            if (h0 < 0) rise = i + x1;
+            else set = i + x1;
+
+        } else if (roots === 2) {
+            rise = i + (ye < 0 ? x2 : x1);
+            set = i + (ye < 0 ? x1 : x2);
+        }
+
+        if (rise && set) break;
+
+        h0 = h2;
+    }
+
+    var result = {};
+
+    if (rise) result.rise = hoursLater(t, rise);
+    if (set) result.set = hoursLater(t, set);
+
+    if (!rise && !set) result[ye > 0 ? 'alwaysUp' : 'alwaysDown'] = true;
+
+    return result;
+};
+
+
+// export as Node module / AMD module / browser variable
+if (typeof exports === 'object' && typeof module !== 'undefined') module.exports = SunCalc;
+else if (typeof define === 'function' && define.amd) define(SunCalc);
+else window.SunCalc = SunCalc;
+
+}());
+
+</script>
+<script>
 const App = {
   state: {
     screen: 'home',
@@ -562,6 +915,8 @@ const App = {
     currentDeviceId: null,
     autoScan: false,
     autoScanTimer: null,
+    manualDigits: '',
+    ocrApiKey: '',
     ocrWorker: null,
     ocrScanning: false,
     pendingTC: null,
@@ -602,6 +957,7 @@ const App = {
         this.state.project = parsed.project || 'My Project';
         this.state.camera = parsed.camera || 'A';
         this.state.fps = parsed.fps || 25;
+        this.state.ocrApiKey = parsed.ocrApiKey || '';
       }
     } catch (e) { console.error('Load error:', e); }
   },
@@ -613,7 +969,8 @@ const App = {
         presets: this.state.presets,
         project: this.state.project,
         camera: this.state.camera,
-        fps: this.state.fps
+        fps: this.state.fps,
+        ocrApiKey: this.state.ocrApiKey
       }));
     } catch (e) { console.error('Save error:', e); }
   },
@@ -695,6 +1052,8 @@ const App = {
   // ============ SYNC / OCR ============
   async openSync() {
     this.showScreen('sync');
+    this.state.manualDigits = '';
+    this.updateManualDisplay();
     await this.startCamera();
     await this.listCameras();
   },
@@ -819,66 +1178,31 @@ const App = {
 
     this.state.ocrScanning = true;
     if (!silent) document.getElementById('scan-btn-text').textContent = 'Scanning...';
-    document.getElementById('scan-hint').textContent = silent ? 'Auto-scan…' : 'Spracovávam...';
+    document.getElementById('scan-hint').textContent = silent ? 'Auto-scan…' : 'Posielam na rozpoznanie…';
 
     try {
-      // Capture frame — zaznamenaj PRESNÝ moment zachytenia obrázka
       const captureTimestamp = performance.now();
       const video = document.getElementById('camera-video');
       const canvas = document.getElementById('ocr-canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
-      
-      // Skenuj širokú oblasť (TC býva v rohu/dole, nie v strede) — beriem skoro celý záber
+
+      // Crop na skenovaciu oblasť, obmedz šírku (limit veľkosti pre cloud)
       const cropX = video.videoWidth * 0.05;
       const cropY = video.videoHeight * 0.10;
       const cropW = video.videoWidth * 0.90;
       const cropH = video.videoHeight * 0.80;
-
-      // Upscale 2x — malý text na profi displeji potrebuje viac pixelov
-      const scale = 2;
-      canvas.width = cropW * scale;
-      canvas.height = cropH * scale;
-      ctx.imageSmoothingEnabled = true;
+      const maxW = 1100;
+      const sc = Math.min(1, maxW / cropW);
+      canvas.width = Math.round(cropW * sc);
+      canvas.height = Math.round(cropH * sc);
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
 
-      // Grayscale do poľa
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imgData.data;
-      const N = data.length / 4;
-      const gray = new Uint8ClampedArray(N);
-      const hist = new Array(256).fill(0);
-      for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-        const v = Math.round(0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2]);
-        gray[j] = v;
-        hist[v]++;
-      }
-      // Otsu — automatický prah
-      let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
-      let sumB = 0, wB = 0, varMax = 0, thresh = 128;
-      for (let t = 0; t < 256; t++) {
-        wB += hist[t]; if (wB === 0) continue;
-        const wF = N - wB; if (wF === 0) break;
-        sumB += t * hist[t];
-        const mB = sumB / wB, mF = (sum - sumB) / wF;
-        const between = wB * wF * (mB - mF) * (mB - mF);
-        if (between > varMax) { varMax = between; thresh = t; }
-      }
-
-      // Initialize Tesseract if needed
-      if (!this.state.ocrWorker) {
-        this.state.ocrWorker = await Tesseract.createWorker('eng', 1, { logger: () => {} });
-        await this.state.ocrWorker.setParameters({
-          tessedit_char_whitelist: '0123456789:;.',
-          tessedit_pageseg_mode: '11'
-        });
-      }
+      const base64 = canvas.toDataURL('image/jpeg', 0.82);
 
       const patterns = [
-        /(\d{2})\s*[:.]\s*(\d{2})\s*[:.]\s*(\d{2})\s*[:.;]\s*(\d{2,3})/,
-        /(\d{1,2})\s*[:.]\s*(\d{2})\s*[:.]\s*(\d{2})\s*[:.;]\s*(\d{1,3})/
+        /(\d{2})\s*[:.;]\s*(\d{2})\s*[:.;]\s*(\d{2})\s*[:.;]\s*(\d{2,3})/,
+        /(\d{1,2})\s*[:.;]\s*(\d{2})\s*[:.;]\s*(\d{2})\s*[:.;]\s*(\d{1,3})/
       ];
       const parseTC = (text) => {
         for (const pattern of patterns) {
@@ -891,33 +1215,30 @@ const App = {
         return null;
       };
 
-      // Vyrob binárnu verziu s danou polaritou a spusti OCR
-      const tryRecognize = async (invert) => {
-        const id = ctx.createImageData(canvas.width, canvas.height);
-        for (let j = 0, i = 0; j < N; j++, i += 4) {
-          // svetlý text na tmavom → invert=true spraví čierny text na bielom (Tesseract friendly)
-          let bin;
-          if (invert) bin = gray[j] > thresh ? 0 : 255;
-          else bin = gray[j] > thresh ? 255 : 0;
-          id.data[i] = id.data[i+1] = id.data[i+2] = bin; id.data[i+3] = 255;
-        }
-        ctx.putImageData(id, 0, 0);
-        const res = await this.state.ocrWorker.recognize(canvas);
-        return { text: res.data.text, tc: parseTC(res.data.text) };
-      };
+      // Cloud OCR — OCR.space
+      const apiKey = (this.state.ocrApiKey && this.state.ocrApiKey.trim()) || 'helloworld';
+      const form = new FormData();
+      form.append('base64Image', base64);
+      form.append('OCREngine', '2');
+      form.append('scale', 'true');
+      form.append('isTable', 'false');
 
-      // 1. pokus: invertovaná (svetlý text na tmavom = väčšina kamier)
-      let r = await tryRecognize(true);
-      let found = r.tc;
-      let lastText = r.text;
-      // 2. pokus: opačná polarita (tmavý text na svetlom)
-      if (!found) {
-        r = await tryRecognize(false);
-        found = r.tc;
-        if (r.text.trim()) lastText = r.text;
+      const resp = await fetch('https://api.ocr.space/parse/image', {
+        method: 'POST',
+        headers: { 'apikey': apiKey },
+        body: form
+      });
+      const json = await resp.json();
+
+      let text = '';
+      if (json && json.ParsedResults && json.ParsedResults[0]) {
+        text = json.ParsedResults[0].ParsedText || '';
+      } else if (json && json.ErrorMessage) {
+        throw new Error(Array.isArray(json.ErrorMessage) ? json.ErrorMessage.join(' ') : json.ErrorMessage);
       }
-      const text = lastText;
-      
+
+      const found = parseTC(text);
+
       if (found) {
         this.state.pendingTC = found;
         this.state.pendingScanTime = captureTimestamp;
@@ -925,44 +1246,69 @@ const App = {
         document.getElementById('ocr-tc').textContent = tcStr;
         document.getElementById('ocr-status').style.display = 'block';
         document.getElementById('ocr-status').className = 'ocr-status success';
-        document.getElementById('ocr-label').textContent = '✓ Detected Timecode';
+        document.getElementById('ocr-label').textContent = '✓ Rozpoznaný timecode';
         document.getElementById('scan-hint').textContent = '✓ Timecode rozpoznaný!';
         if (navigator.vibrate) navigator.vibrate(50);
       } else {
         document.getElementById('ocr-status').style.display = 'block';
         document.getElementById('ocr-status').className = 'ocr-status error';
-        document.getElementById('ocr-label').textContent = '✗ Not detected';
-        document.getElementById('ocr-tc').textContent = text.trim().substring(0, 20) || '---';
-        document.getElementById('scan-hint').textContent = 'Skús znova, lepšie zameraj';
+        document.getElementById('ocr-label').textContent = '✗ TC nenájdený v texte';
+        document.getElementById('ocr-tc').textContent = (text.replace(/\s+/g, ' ').trim().substring(0, 24)) || '---';
+        document.getElementById('scan-hint').textContent = 'Skús znova / použi numpad nižšie';
       }
     } catch (e) {
       console.error(e);
-      this.toast('OCR error: ' + e.message, true);
+      document.getElementById('scan-hint').textContent = 'Chyba: ' + e.message;
+      if (!silent) this.toast('Cloud OCR: ' + e.message, true);
     }
 
     this.state.ocrScanning = false;
-    document.getElementById('scan-btn-text').textContent = 'Scan Timecode';
+    if (!silent) document.getElementById('scan-btn-text').textContent = 'Scan Timecode';
+  },
+
+  manualDigit(d) {
+    if (this.state.manualDigits.length >= 8) return;
+    this.state.manualDigits += d;
+    this.updateManualDisplay();
+    if (navigator.vibrate) navigator.vibrate(10);
+  },
+
+  manualBackspace() {
+    this.state.manualDigits = this.state.manualDigits.slice(0, -1);
+    this.updateManualDisplay();
+  },
+
+  manualClear() {
+    this.state.manualDigits = '';
+    this.updateManualDisplay();
+  },
+
+  updateManualDisplay() {
+    const d = this.state.manualDigits.padEnd(8, '-');
+    const pairs = [d.slice(0,2), d.slice(2,4), d.slice(4,6), d.slice(6,8)];
+    const ids = ['mtc-h', 'mtc-m', 'mtc-s', 'mtc-f'];
+    pairs.forEach((p, i) => {
+      const el = document.getElementById(ids[i]);
+      el.textContent = p;
+      el.className = 'mtc-pair' + (p.includes('-') ? ' empty' : '');
+    });
   },
 
   syncAndStart() {
     let tc = this.state.pendingTC;
-    // moment, kedy daný timecode reálne platil (zachytenie OCR frame)
     let captureTime = this.state.pendingScanTime;
 
-    // Check manual input
-    const manualInput = document.getElementById('manual-tc').value.trim();
-    if (manualInput) {
-      const match = manualInput.match(/(\d{1,2}):(\d{2}):(\d{2})[:.](\d{1,3})/);
-      if (match) {
-        tc = {
-          h: parseInt(match[1]),
-          m: parseInt(match[2]),
-          s: parseInt(match[3]),
-          f: parseInt(match[4])
-        };
-        // pri manuálnom zadaní berieme moment stlačenia ako referenciu
-        captureTime = performance.now();
-      }
+    // manuálny vstup má prednosť ak je vyplnený (aspoň 6 číslic = HH:MM:SS)
+    const digits = this.state.manualDigits;
+    if (digits.length >= 6) {
+      const padded = digits.padEnd(8, '0');
+      tc = {
+        h: parseInt(padded.slice(0,2)),
+        m: parseInt(padded.slice(2,4)),
+        s: parseInt(padded.slice(4,6)),
+        f: parseInt(padded.slice(6,8))
+      };
+      captureTime = performance.now(); // moment stlačenia = referencia (jam sync)
     }
 
     if (!tc) {
@@ -971,21 +1317,20 @@ const App = {
     }
     if (captureTime == null) captureTime = performance.now();
 
-    // KOMPENZÁCIA MEŠKANIA:
-    // koľko času ubehlo od zachytenia TC (OCR scan / manuál) po teraz
+    // KOMPENZÁCIA MEŠKANIA
     const now = performance.now();
     const delayMs = now - captureTime;
-    // offset = naskenovaný TC + ubehnutý čas → appka "dobehne" kameru
     this.state.syncOffsetMs = this.tcToMs(tc) + delayMs;
     this.state.startTime = now;
     this.state.isRunning = true;
+    this.state.manualDigits = '';
 
     this.closeSync();
     this.requestWakeLock();
     document.getElementById('rec-fps').textContent = this.state.fps;
     this.showScreen('rec');
     this.updateTC();
-    this.toast('✓ Synced @ ' + this.tcToString(this.msToTC(this.state.syncOffsetMs)));
+    this.toast('Synced @ ' + this.tcToString(this.msToTC(this.state.syncOffsetMs)));
   },
 
   // ============ REC ============
@@ -1161,6 +1506,11 @@ const App = {
     document.getElementById('setting-project').value = this.state.project;
     document.getElementById('setting-camera').value = this.state.camera;
     document.getElementById('setting-fps').value = this.state.fps;
+    document.getElementById('setting-ocrkey').value = this.state.ocrApiKey || '';
+    document.getElementById('setting-ocrkey').onchange = (e) => {
+      this.state.ocrApiKey = e.target.value.trim();
+      this.save();
+    };
     
     document.getElementById('setting-project').onchange = (e) => {
       this.state.project = e.target.value;
@@ -1321,63 +1671,22 @@ const App = {
   // ============ SUN POSITION ============
   // Solar position algoritmus (NOAA approx) — vracia azimut a eleváciu
   sunPosition(date, lat, lng) {
-    const rad = Math.PI / 180;
-    const dayMs = 86400000;
-    const J1970 = 2440588, J2000 = 2451545;
-    const toJulian = (d) => d.valueOf() / dayMs - 0.5 + J1970;
-    const toDays = (d) => toJulian(d) - J2000;
-    const e = rad * 23.4397; // obliquity
-
-    const days = toDays(date);
-    const M = rad * (357.5291 + 0.98560028 * days); // solar mean anomaly
-    const C = rad * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2*M) + 0.0003 * Math.sin(3*M));
-    const P = rad * 102.9372;
-    const L = M + C + P + Math.PI; // ecliptic longitude
-    const dec = Math.asin(Math.sin(0) * Math.cos(e) + Math.cos(0) * Math.sin(e) * Math.sin(L));
-    const ra = Math.atan2(Math.sin(L) * Math.cos(e) - Math.tan(0) * Math.sin(e), Math.cos(L));
-
-    const lw = rad * -lng;
-    const phi = rad * lat;
-    const siderealTime = rad * (280.16 + 360.9856235 * days) - lw;
-    const H = siderealTime - ra;
-
-    const altitude = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H));
-    let azimuth = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi));
-    azimuth = azimuth / rad + 180; // 0 = sever, v stupňoch
+    // Overené cez SunCalc; azimut prevedieme z "od juhu" na kompas (0=sever)
+    const p = SunCalc.getPosition(date, lat, lng);
+    let azimuth = (p.azimuth * 180 / Math.PI) + 180;
     azimuth = (azimuth + 360) % 360;
-
-    return { azimuth, altitude: altitude / rad };
+    return { azimuth, altitude: p.altitude * 180 / Math.PI };
   },
 
-  // Časy východu/západu — hľadanie prechodu elevácie cez prahy
   sunTimes(date, lat, lng) {
-    const base = new Date(date);
-    base.setHours(0, 0, 0, 0);
-    const samples = [];
-    for (let min = 0; min <= 1440; min += 1) {
-      const t = new Date(base.getTime() + min * 60000);
-      samples.push({ t, alt: this.sunPosition(t, lat, lng).altitude });
-    }
-    const findCross = (threshold, rising) => {
-      for (let i = 1; i < samples.length; i++) {
-        const a = samples[i-1].alt, b = samples[i].alt;
-        if (rising && a < threshold && b >= threshold) return samples[i].t;
-        if (!rising && a >= threshold && b < threshold) return samples[i].t;
-      }
-      return null;
-    };
-    // poludnie = najvyššia elevácia
-    let noon = samples[0], maxAlt = -90;
-    samples.forEach(s => { if (s.alt > maxAlt) { maxAlt = s.alt; noon = s.t; } });
-
+    const t = SunCalc.getTimes(date, lat, lng);
     return {
-      sunrise: findCross(-0.833, true),
-      sunset: findCross(-0.833, false),
-      goldenMorningEnd: findCross(6, true),
-      goldenEveningStart: findCross(6, false),
-      blueEvening: findCross(-4, false),
-      noon: noon.t,
-      maxAlt
+      sunrise: t.sunrise,
+      sunset: t.sunset,
+      goldenMorningEnd: t.goldenHourEnd,   // ráno koniec golden hour
+      goldenEveningStart: t.goldenHour,    // večer začiatok golden hour
+      blueEvening: t.dusk,                 // večerná modrá hodinka / súmrak
+      noon: t.solarNoon
     };
   },
 
