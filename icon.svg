@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="1024" height="1024">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2b2833"/>
+      <stop offset=".5" stop-color="#3A1512"/>
+      <stop offset="1" stop-color="#111016"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx=".24" cy=".02" r=".95">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".40"/>
+      <stop offset=".45" stop-color="#ffffff" stop-opacity=".06"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bounce" cx=".85" cy="1" r=".7">
+      <stop offset="0" stop-color="#FF6A5C" stop-opacity=".30"/>
+      <stop offset="1" stop-color="#FF6A5C" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".55"/>
+      <stop offset=".45" stop-color="#ffffff" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".18"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="64" height="64" rx="14.5" fill="url(#body)"/>
+  <rect x="0" y="0" width="64" height="64" rx="14.5" fill="url(#bounce)"/>
+  <rect x="0" y="0" width="64" height="64" rx="14.5" fill="url(#sheen)"/>
+  <rect x=".75" y=".75" width="62.5" height="62.5" rx="13.8" fill="none" stroke="url(#edge)" stroke-width="1.5"/>
+
+  <g opacity=".55" filter="url(#glow)">
+      <path d="M14 44h36" stroke="#FF6A5C" stroke-width="5" stroke-linecap="round" opacity=".45"/>
+      <path d="M32 16v22" stroke="#FF6A5C" stroke-width="5" stroke-linecap="round"/>
+      <path d="M32 17h14l-5 6 5 6H32z" fill="#FF6A5C"/></g>
+  <g>
+      <path d="M14 44h36" stroke="#FF6A5C" stroke-width="5" stroke-linecap="round" opacity=".45"/>
+      <path d="M32 16v22" stroke="#FF6A5C" stroke-width="5" stroke-linecap="round"/>
+      <path d="M32 17h14l-5 6 5 6H32z" fill="#FF6A5C"/></g>
+</svg>
